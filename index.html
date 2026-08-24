@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Smart Inverter Pro - Clean & Fixed</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+    <script>
+        tailwind.config = { darkMode: 'class', theme: { extend: { colors: { brand: '#C6F432', darkBg: '#080808' } } } }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #080808; color: white; margin: 0; padding: 0; overflow-x: hidden; }
+        .page-section { display: none; opacity: 0; }
+        .page-section.active { display: block; opacity: 1; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .glass-card { background: #121212; border-radius: 28px; padding: 20px; border: 1px solid rgba(255,255,255,0.04); margin-bottom: 12px; }
+        .gauge-svg { width: 240px; height: 120px; margin: 0 auto; display: block; overflow: visible; }
+        .gauge-track { fill: none; stroke: #1a1a1a; stroke-width: 10; stroke-linecap: round; }
+        .gauge-progress { fill: none; stroke: #C6F432; stroke-width: 10; stroke-linecap: round; stroke-dasharray: 251.2; stroke-dashoffset: 251.2; transition: stroke-dashoffset 1s ease-in-out; }
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #222; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #C6F432; }
+        input:checked + .slider:before { transform: translateX(20px); background-color: black; }
+        .nav-bottom { position: fixed; bottom: 15px; left: 50%; transform: translateX(-50%); width: 85%; max-width: 350px; background: rgba(18,18,18,0.95); backdrop-filter: blur(20px); border-radius: 32px; display: flex; justify-content: space-around; padding: 12px; z-index: 1000; border: 1px solid rgba(255,255,255,0.05); }
+        .nav-item { color: #444; width: 45px; height: 45px; display: flex; align-items: center; justify-content: center; border-radius: 50%; cursor: pointer; border: none; background: none; }
+        .nav-item.active { color: black !important; background: #C6F432 !important; box-shadow: 0 4px 15px rgba(198, 244, 50, 0.4); }
+        .chart-container { position: relative; height: 220px; width: 100%; }
+    </style>
+</head>
+<body class="pb-32">
+
+    <div class="px-5">
+        <header class="py-8 flex justify-between items-center">
+            <div><h1 class="text-xs font-bold tracking-[0.3em] text-gray-400 uppercase">Smart Inverter</h1><p class="text-[9px] text-gray-600 mt-1 uppercase font-bold tracking-widest" id="date-text">Loading...</p></div>
+            <div id="led" class="w-10 h-10 rounded-full bg-neutral-900 flex items-center justify-center border border-white/5"><div id="led-dot" class="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_10px_#ef4444]"></div></div>
+        </header>
+
+        <!-- ১. HOME PAGE -->
+        <main id="page-home" class="page-section active">
+            <div class="glass-card relative pt-4 overflow-hidden">
+                <div class="relative -mt-5">
+                    <svg class="gauge-svg" viewBox="0 0 200 110"><path class="gauge-track" d="M20,100 A80,80 0 0,1 180,100" /><path id="gauge-path" class="gauge-progress" d="M20,100 A80,80 0 0,1 180,100" /></svg>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center mt-12"><h2 class="text-5xl font-bold text-white" id="bat-pct">0%</h2><p class="text-[8px] text-brand uppercase tracking-[0.4em] font-black mt-1" id="charge-source">Idle</p></div>
+                </div>
+                <!-- ৪ কলামে ব্যাকআপ টাইম সহ -->
+                <div class="grid grid-cols-4 gap-1 mt-6 text-center border-t border-white/5 pt-6 pb-2">
+                    <div><p class="text-[8px] text-gray-600 uppercase font-bold">Status</p><p class="text-[10px] font-bold uppercase truncate" id="v-state">IDLE</p></div>
+                    <div><p class="text-[8px] text-gray-600 uppercase font-bold">Ah</p><p class="text-[10px] font-bold" id="v-ah-main">-- Ah</p></div>
+                    <div><p class="text-[8px] text-gray-600 uppercase font-bold">Backup</p><p class="text-[10px] font-bold text-cyan-400" id="backup-time">--</p></div>
+                    <div><p class="text-[8px] text-gray-600 uppercase font-bold">Power</p><p class="text-[10px] font-bold text-brand" id="v-watt">0W</p></div>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="glass-card flex flex-col items-center py-6 mb-0"><p class="text-[9px] text-gray-500 uppercase font-bold mb-1">Voltage</p><h4 class="text-3xl font-bold text-white"><span id="v-volt">0.0</span><span class="text-xs text-gray-700 ml-1">V</span></h4></div>
+                <div class="glass-card flex flex-col items-center py-6 mb-0"><p class="text-[9px] text-gray-500 uppercase font-bold mb-1">Solar Current</p><h4 class="text-3xl font-bold text-white"><span id="v-amp">0.00</span><span class="text-sm text-gray-700 ml-1">A</span></h4></div>
+            </div>
+            <div class="glass-card flex justify-between items-center py-5 px-8">
+                <div><p class="text-[9px] text-gray-600 uppercase font-bold mb-1">Total Charging</p><h4 class="text-xl font-bold text-brand" id="wh-in-main">0.000</h4></div>
+                <div class="h-8 w-px bg-white/5"></div>
+                <div class="text-right"><p class="text-[9px] text-gray-600 uppercase font-bold mb-1">Total Loading</p><h4 class="text-xl font-bold text-red-500" id="wh-out-main">0.000</h4></div>
+            </div>
+            <div class="glass-card"><p class="text-[9px] text-gray-500 font-bold uppercase mb-4 border-b border-white/5 pb-2 tracking-widest text-center">Today's Summary</p>
+                <div class="grid grid-cols-3 gap-2 text-center">
+                    <div><p class="text-[8px] text-gray-600 uppercase">Solar In</p><p class="text-sm font-bold text-brand" id="today-solar">0.00</p></div>
+                    <div><p class="text-[8px] text-gray-600 uppercase">Load Out</p><p class="text-sm font-bold text-red-400" id="today-load">0.00</p></div>
+                    <div><p class="text-[8px] text-gray-600 uppercase">Grid In</p><p class="text-sm font-bold text-blue-400" id="today-grid">0.00</p></div>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="glass-card flex justify-between items-center py-5 px-6 mb-0"><span class="text-[10px] font-bold uppercase tracking-widest">Inverter</span><label class="switch"><input type="checkbox" onchange="pushSw('inverter', this.checked)" id="sw-inv"><span class="slider"></span></label></div>
+                <div class="glass-card flex justify-between items-center py-5 px-6 mb-0"><span class="text-[10px] font-bold uppercase tracking-widest">Line Cut</span><label class="switch"><input type="checkbox" onchange="pushSw('line', this.checked)" id="sw-line"><span class="slider"></span></label></div>
+            </div>
+        </main>
+
+        <!-- ২. STATISTICS PAGE -->
+        <main id="page-stat" class="page-section">
+            <h2 class="text-2xl font-bold mb-8 uppercase tracking-widest">Analytics</h2>
+            <div class="glass-card mb-6">
+                <div class="chart-container">
+                    <canvas id="powerChart"></canvas>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="glass-card mb-0"><p class="text-[9px] text-gray-500 font-bold uppercase mb-2">Max Charge Today</p><h4 class="text-xl font-bold text-brand"><span id="max-charge">0</span>W</h4></div>
+                <div class="glass-card mb-0"><p class="text-[9px] text-gray-500 font-bold uppercase mb-2">Max Load Today</p><h4 class="text-xl font-bold text-red-500"><span id="max-load">0</span>W</h4></div>
+            </div>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="glass-card mb-0"><p class="text-[9px] text-gray-500 font-bold uppercase mb-2">Ah Generated Today</p><h4 class="text-xl font-bold text-brand"><span id="today-ahin">0.00</span> Ah</h4></div>
+                <div class="glass-card mb-0"><p class="text-[9px] text-gray-500 font-bold uppercase mb-2">Ah Discharged Today</p><h4 class="text-xl font-bold text-red-500"><span id="today-ahout">0.00</span> Ah</h4></div>
+            </div>
+            <button onclick="resetMax()" class="w-full mt-6 text-[10px] text-gray-600 uppercase font-bold tracking-widest">Reset Analytics</button>
+        </main>
+
+        <!-- ৩. SYSTEM INFO -->
+        <main id="page-sys" class="page-section">
+            <h2 class="text-2xl font-bold mb-8 uppercase tracking-widest">Hardware</h2>
+            <div class="glass-card space-y-6">
+                <div class="flex justify-between border-b border-white/5 pb-3"><span>WiFi Signal</span><span id="wifi-rssi" class="text-brand font-bold">-- dBm</span></div>
+                <div class="flex justify-between"><span>Sync Status</span><span class="text-emerald-500 font-bold uppercase text-[10px]" id="conn-status">Active</span></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 3 Tabs Navigation (Settings removed) -->
+    <nav class="nav-bottom">
+        <button onclick="navTo('home', this)" class="nav-item active"><i class="fas fa-home"></i></button>
+        <button onclick="navTo('stat', this)" class="nav-item"><i class="fas fa-chart-line"></i></button>
+        <button onclick="navTo('sys', this)" class="nav-item"><i class="fas fa-microchip"></i></button>
+    </nav>
+
+    <script>
+        window.navTo = function(p, btn) { 
+            document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active')); 
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active')); 
+            document.getElementById('page-' + p).classList.add('active'); 
+            if(btn) btn.classList.add('active'); 
+            window.scrollTo(0,0);
+            if(p === 'stat' && window.powerChart) {
+                setTimeout(() => { window.powerChart.resize(); }, 150);
+            }
+        };
+
+        window.resetMax = function() { 
+            localStorage.setItem('maxCharge', 0); 
+            localStorage.setItem('maxLoad', 0); 
+            localStorage.setItem('todayAhIn', 0);
+            localStorage.setItem('todayAhOut', 0);
+            localStorage.removeItem('savedGraphLabels'); 
+            localStorage.removeItem('savedGraphData'); 
+            location.reload(); 
+        };
+
+        const firebaseConfig = { apiKey: "AIzaSyDqO22UXsPCRzZcsezLE8mDn_ffAzf0F5w", authDomain: "inverter-and-solar.firebaseapp.com", databaseURL: "https://inverter-and-solar-default-rtdb.firebaseio.com", projectId: "inverter-and-solar", storageBucket: "inverter-and-solar.firebasestorage.app", messagingSenderId: "232410148433", appId: "1:232410148433:web:f794c17a628407dac4d270", measurementId: "G-XPV0CHRK14" };
+        firebase.initializeApp(firebaseConfig); const db = firebase.database();
+
+        let whSolar = parseFloat(localStorage.getItem('whSolar') || 0), whGrid = parseFloat(localStorage.getItem('whGrid') || 116.813), maxCharge = parseFloat(localStorage.getItem('maxCharge') || 0), maxLoad = parseFloat(localStorage.getItem('maxLoad') || 0), lastWhTotal = 0;
+        let todayAhIn = parseFloat(localStorage.getItem('todayAhIn') || 0), todayAhOut = parseFloat(localStorage.getItem('todayAhOut') || 0);
+        let lastCheckTime = Date.now();
+
+        const savedLabels = JSON.parse(localStorage.getItem('savedGraphLabels') || "[]"), savedData = JSON.parse(localStorage.getItem('savedGraphData') || "[]");
+
+        const ctx = document.getElementById('powerChart').getContext('2d');
+        const powerChart = new Chart(ctx, { 
+            type: 'line', 
+            data: { labels: savedLabels, datasets: [{ borderColor: '#C6F432', data: savedData, borderWidth: 2, pointRadius: 0, fill: true, backgroundColor: 'rgba(198, 244, 50, 0.05)', tension: 0.4 }] }, 
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                plugins: { legend: { display: false } }, 
+                scales: { 
+                    x: { display: true, ticks: { color: '#888', font: { size: 8 } }, grid: { display: false } }, 
+                    y: { 
+                        beginAtZero: true,
+                        suggestedMin: -400,
+                        suggestedMax: 400,
+                        grid: { color: 'rgba(255,255,255,0.03)' }, 
+                        ticks: { color: '#888', font: { size: 9 } } 
+                    } 
+                } 
+            } 
+        });
+        window.powerChart = powerChart;
+
+        db.ref('/').on('value', snap => {
+            const data = snap.val(); if(!data) return;
+            
+            const baOff = -35; 
+            const batCap = 65;
+
+            const rv = parseFloat(data.solar?.voltage || 0);
+            const ra = parseFloat(data.solar?.current || 0);
+            const totIn = parseFloat(data.energy?.whIn || 0);
+            const rawAh = parseFloat(data.battery?.ah || 0);
+            
+            const finalV = rv;
+            const finalA = ra;
+            const finalW = finalV * finalA;
+            const finalAh = rawAh + baOff; 
+            const calcPct = Math.min(100, Math.max(0, (finalAh / batCap) * 100));
+
+            // Backup Time
+            let backupStr = "N/A";
+            const loadW = Math.abs(finalW);
+            const batState = (data.battery?.state || "").toUpperCase();
+
+            if ((batState === "DISCHARGING" || finalA < -0.05) && finalAh > 0) {
+                if (loadW > 1) {
+                    const remainingWh = finalAh * finalV;
+                    const totalHours = remainingWh / loadW;
+                    if (totalHours < 48 && totalHours > 0) {
+                        const h = Math.floor(totalHours);
+                        const m = Math.floor((totalHours - h) * 60);
+                        backupStr = `${h}h ${m}m`;
+                    } else { backupStr = "48h+"; }
+                } else { backupStr = "Low Load"; }
+            } else if (batState === "CHARGING" || finalA > 0.05) { backupStr = "Charging"; }
+            else { backupStr = "Full / Idle"; }
+            document.getElementById('backup-time').innerText = backupStr;
+
+            const hr = new Date().getHours();
+            if (lastWhTotal === 0) lastWhTotal = totIn;
+            else if (totIn > lastWhTotal) { const diff = totIn - lastWhTotal; if (hr >= 6 && hr < 18) whSolar += diff; else whGrid += diff; localStorage.setItem('whSolar', whSolar); localStorage.setItem('whGrid', whGrid); lastWhTotal = totIn; }
+
+            if (finalW > 0.1) { if (finalW > maxCharge) { maxCharge = finalW; localStorage.setItem('maxCharge', maxCharge); } }
+            else if (finalW < -0.1) { let absW = Math.abs(finalW); if (absW > maxLoad) { maxLoad = absW; localStorage.setItem('maxLoad', maxLoad); } }
+
+            document.getElementById('v-volt').innerText = finalV.toFixed(1);
+            document.getElementById('v-amp').innerText = finalA.toFixed(2);
+            document.getElementById('v-watt').innerText = Math.abs(finalW).toFixed(0) + "W";
+            document.getElementById('bat-pct').innerText = calcPct.toFixed(0) + "%";
+            document.getElementById('v-state').innerText = data.battery?.state || "IDLE";
+            document.getElementById('v-ah-main').innerText = finalAh.toFixed(1) + " Ah";
+            document.getElementById('gauge-path').style.strokeDashoffset = 251.2 - (251.2 * (calcPct / 100));
+
+            let src = "Idle"; if (finalA > 0.15) src = (hr >= 6 && hr < 18) ? "Solar Charging" : "Grid Charging"; else if (finalA < -0.15) src = "Discharging";
+            document.getElementById('charge-source').innerText = src;
+
+            document.getElementById('wh-in-main').innerText = totIn.toFixed(3);
+            document.getElementById('wh-out-main').innerText = parseFloat(data.energy?.whOut || 0).toFixed(3);
+            document.getElementById('today-solar').innerText = whSolar.toFixed(2);
+            document.getElementById('today-load').innerText = parseFloat(data.energy?.dailyWhOut || 0).toFixed(2);
+            document.getElementById('today-grid').innerText = whGrid.toFixed(2);
+            document.getElementById('max-charge').innerText = maxCharge.toFixed(0);
+            document.getElementById('max-load').innerText = maxLoad.toFixed(0);
+            
+            const nowTime = Date.now();
+            const elapsedSec = (nowTime - lastCheckTime) / 1000;
+            lastCheckTime = nowTime;
+            if (elapsedSec > 0 && elapsedSec < 15) {
+                const ahDelta = Math.abs(finalA) * (elapsedSec / 3600);
+                if (finalA > 0.15) { todayAhIn += ahDelta; localStorage.setItem('todayAhIn', todayAhIn); } 
+                else if (finalA < -0.15) { todayAhOut += ahDelta; localStorage.setItem('todayAhOut', todayAhOut); }
+            }
+            document.getElementById('today-ahin').innerText = todayAhIn.toFixed(2);
+            document.getElementById('today-ahout').innerText = todayAhOut.toFixed(2);
+            document.getElementById('wifi-rssi').innerText = (data.system?.wifiRSSI || '--') + ' dBm';
+
+            const on = data.system?.status === "ONLINE";
+            document.getElementById('led-dot').className = on ? "w-2 h-2 rounded-full bg-[#C6F432] shadow-[0_0_10px_#C6F432]" : "w-2 h-2 rounded-full bg-red-500";
+            document.getElementById('conn-text').innerText = on ? "Online" : "Offline";
+            document.getElementById('sw-inv').checked = data.relay?.inverter === true;
+            document.getElementById('sw-line').checked = data.relay?.line === true;
+
+            const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (powerChart.data.labels[powerChart.data.labels.length - 1] !== t) {
+                powerChart.data.labels.push(t); powerChart.data.datasets[0].data.push(finalW);
+                if (powerChart.data.labels.length > 50) { powerChart.data.labels.shift(); powerChart.data.datasets[0].data.shift(); }
+                localStorage.setItem('savedGraphLabels', JSON.stringify(powerChart.data.labels));
+                localStorage.setItem('savedGraphData', JSON.stringify(powerChart.data.datasets[0].data));
+                powerChart.update('none');
+            }
+        });
+
+        window.pushSw = function(k, v) { db.ref('relay').update({ [k]: v }); };
+        const d = new Date(); document.getElementById('date-text').innerText = `${d.toLocaleString('default',{month:'short'})} ${d.getDate()}, ${d.getFullYear()}`;
+    </script>
+</body>
+</html>
